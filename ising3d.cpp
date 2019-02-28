@@ -266,13 +266,13 @@ int main() {
     int coldstart = 1;
     initialize(lattice, weights, K, M, E, coldstart);
     cout << "Done Initializing" << endl;
-    unsigned int mcs = 10000;
+    unsigned int mcs = 2000;
     ofstream readme;
     readme.open("./ising3d_output/readme.txt");
     readme << "Number of MCS: " << mcs << endl;
     readme << "Lattice Size: " << lsize << endl;
     readme << "K Sweep Values" << endl;
-    for (auto i = 23; i != 30; ++i) {
+    for (auto i = 0; i != 30; ++i) {
         string ofile;
         string current_K = to_string(i);
         ofile = "./ising3d_output/" + current_K + ".csv";
