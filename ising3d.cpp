@@ -24,7 +24,7 @@ int seed = time(0);
 default_random_engine random_engine(seed);
 
 inline int periodic(int i, const int limit, int add) {
-    // This implementation of periodic boundary condition is from 
+    // This implementation of periodic boundary condition is from
     // the 2D ising model example by Hjorth Jensen.
     return (i + limit + add) % (limit);
 }
@@ -38,7 +38,7 @@ double& M, double& E);
 vector<site> find_cluster(Lattice &lattice, const unsigned int lsize, const double K);
 vector<site> find_neighbors(const site, const unsigned int);
 
-void read_input(unsigned int &lsize, unsigned int &num_steps, 
+void read_input(unsigned int &lsize, unsigned int &num_steps,
 unsigned int &start, double &init_K, double &final_K, string &filename, vector<double> &sweep) {
     // Function to read configurations for Monte Carlo pass.
     cout << "Enter lattice size: " << endl;
@@ -65,7 +65,7 @@ unsigned int &start, double &init_K, double &final_K, string &filename, vector<d
     }
 }
 
-void initialize( Lattice &lattice, map<int, double> &weights, double &K, 
+void initialize( Lattice &lattice, map<int, double> &weights, double &K,
 double &M, double &E, const int &coldstart) {
     static uniform_int_distribution<int> u(0,1);
     unsigned int lsize = 0;
@@ -88,7 +88,7 @@ double &M, double &E, const int &coldstart) {
         for (auto j = 0; j != lsize; ++j) {
             for (auto k = 0; k != lsize; ++k) {
                 E += (double) K * lattice[i][j][k] * (
-                    lattice[periodic(i, lsize, 1)][j][k] + 
+                    lattice[periodic(i, lsize, 1)][j][k] +
                     lattice[i][periodic(j, lsize, 1)][k] +
                     lattice[i][j][periodic(k, lsize, 1)]
                 );
@@ -100,7 +100,7 @@ double &M, double &E, const int &coldstart) {
     weights.insert(pair<int, double>(-12, exp(-12 * K)));
     weights.insert(pair<int, double>(-8, exp(-8 * K)));
     weights.insert(pair<int, double>(-4, exp(-4 * K)));
-    
+
     cout << "Initial M = " << M << endl;
     cout << "Initial E = " << E << endl;
 }
@@ -247,7 +247,7 @@ Lattice& lattice, double& K, double& M, double& E) {
     result.open(output_filename);
     result << "M, M2, E, E2, abs(M)" << endl;
     for (auto i = 0; i != mcs; ++i) {
-        result << setprecision(8) << vec_M[i] << "," << vec_M2[i] << "," << vec_E[i] << 
+        result << setprecision(8) << vec_M[i] << "," << vec_M2[i] << "," << vec_E[i] <<
         "," << vec_E2[i] << "," << vec_absM[i] << endl;
     }
 }
@@ -296,7 +296,7 @@ int main() {
         for (auto j = 0; j != lsize; ++j) {
             for (auto k = 0; k != lsize; ++k) {
                 E_test -= (double) lattice[i][j][k] * (
-                    lattice[periodic(i, lsize, 1)][j][k] + 
+                    lattice[periodic(i, lsize, 1)][j][k] +
                     lattice[i][periodic(j, lsize, 1)][k] +
                     lattice[i][j][periodic(k, lsize, 1)]
                 );
