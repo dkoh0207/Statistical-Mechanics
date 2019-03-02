@@ -81,6 +81,23 @@ def process_data_for_plotting(path, system_size, sampling_block=50,
 
     return df
 
+def autocorrelation(name, t, df):
+    '''
+    Calculate autocorrelation function of a variable "name".
+    '''
+    tmax = len(df)
+    assert t < tmax
+    chi = 0
+    sum1, sum2, sum3 = 0, 0, 0
+    for i in range(0, tmax-t):
+        sum1 += df[name][i] * df[name][i + t]
+        sum2 += df[name][i]
+        sum3 += df[name][i + t]
+    norm = 1.0 / (tmax - t)
+    chi = norm * sum1 - (norm**2) * sum2 * sum3
+    return chi
+
+
 def plot_observable(df, system_size, sweep, obs_name, fmt='ks'):
     '''
     Plot an observable (name) from trimmed data dictionary.
