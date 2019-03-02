@@ -46,8 +46,8 @@ def bootstrap(filename, system_size, beta, sampling_block=50,
     return estimates
 
 
-def process_data_for_plotting(path, system_size, sampling_block=50,
-                              offset=0, write=False, repeat=200, thermalization=2000):
+def process_data_for_plotting(path, size_multiplier=1, sampling_block=50,
+                              write=False, repeat=200, thermalization=2000):
     '''
     Run over all CSV datafiles inside directory and preprocess
     data for use in plotting.
@@ -57,11 +57,12 @@ def process_data_for_plotting(path, system_size, sampling_block=50,
 
         system_size: Size of the system (L^3 for 3D Ising, L^3 * 3 for 3D LGT)
 
-        offset: Add an offset if the name of generated CSV files
-        do not match actual K value of the Monte Carlo run.
     '''
+    mcs, lsize, sweep = process_meta_info(path)
+    system_size = lsize * lsize * lsize * size_multiplier
+    k, beta = 0, 0
     rows_list = []
-    files = [f for f in os.listdir(path) if re.match(r'[0-9]+.*\.csv', f)]
+    files = [f for f in os.listdir(path) if re.match(r'cold.*\.csv', f)]
     for fname in files:
         data_dict = {}
         index = re.findall(r"[0-9]+", fname)
@@ -70,16 +71,35 @@ def process_data_for_plotting(path, system_size, sampling_block=50,
             print(fname)
             raise NameError
         index = int(index[0])
-        k = 0.01 * index + offset
-        beta = 1.0 / k
-        fname = path + str(fname)
+        fname = path + '/' + str(fname)
+        beta = sweep.at[index, 'T']
+        data_dict['K'] = sweep.at[index, 'K']
+        data_dict['T'] = beta  # We set k_B = 1
         estimates = bootstrap(fname, system_size, beta, repeat, thermalization)
-        data_dict['K'] = k
         data_dict.update(estimates)
         rows_list.append(data_dict)
     df = pd.DataFrame(rows_list)
+    df = df.sort_values('T')
 
-    return df
+    return df, mcs, system_size
+
+
+def process_meta_info(path):
+
+    mcs, lsize = 0, 0
+    k, t, l = [], [], []
+    readme = path + "/readme.txt"
+    with open(readme, 'r') as f:
+        text = f.readline().strip()
+        l = re.findall('Number of MCS: ([0-9]+)', text)
+        text = f.readline().strip()
+        l += re.findall('Lattice Size: ([0-9]+)', text)
+    assert len(l) == 2
+    mcs, lsize = int(l[0]), int(l[1])
+    df = pd.read_csv("output_20/readme.txt", skiprows=2)
+
+    return mcs, lsize, df
+
 
 def autocorrelation(name, t, df):
     '''
@@ -89,7 +109,7 @@ def autocorrelation(name, t, df):
     assert t < tmax
     chi = 0
     sum1, sum2, sum3 = 0, 0, 0
-    for i in range(0, tmax-t):
+    for i in range(0, tmax - t):
         sum1 += df[name][i] * df[name][i + t]
         sum2 += df[name][i]
         sum3 += df[name][i + t]
@@ -105,10 +125,8 @@ def plot_observable(df, system_size, sweep, obs_name, fmt='ks'):
     fig, ax = plt.subplots()
     label = "L = {0}".format(system_size)
     ax.errorbar(df[sweep], df[obs_name], yerr=df[obs_name + 'err'],
-        fmt=fmt, label=label, elinewidth=1, markersize=4, capsize=2)
+                fmt=fmt, label=label, elinewidth=1, markersize=4, capsize=2)
     ax.grid(linestyle='--')
     ax.set_xlabel("${0}$".format(sweep), fontsize=14)
     ax.set_ylabel("${0}$".format(obs_name), fontsize=14)
     return fig
-
-if __name__ == "__main__":
