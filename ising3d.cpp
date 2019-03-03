@@ -41,7 +41,7 @@ vector<site> find_neighbors(const site, const unsigned int);
 void test_update(Lattice& lattice, const unsigned int lsize);
 
 void read_input(unsigned int &lsize, unsigned int &num_steps, unsigned int &mcs,
-  double &init_T, double &final_T, vector<double> &sweep) {
+  double &init_T, double &final_T, vector<double> &sweep, string &path) {
   // Function to read configurations for Monte Carlo pass.
   cout << "Enter lattice size: " << endl;
   cin >> lsize;
@@ -53,6 +53,8 @@ void read_input(unsigned int &lsize, unsigned int &num_steps, unsigned int &mcs,
   cin >> num_steps;
   cout << "Enter MCS per site: " << endl;
   cin >> mcs;
+  cout << "Enter output path: " << endl;
+  cin >> path;
   double T_step = (final_T - init_T) / ((double) num_steps);
   double t = {0.0};
   for (auto i = 0; i != num_steps; ++i) {
@@ -172,14 +174,6 @@ const double &K, double& M, double& E, map<int, double>& weights) {
     site s = choose_random_site(lsize);
     dE = deltaE(s, lattice, lsize, K);
     w = weights[dE];
-    /*
-    if (u(random_engine) < exp(dE)) {
-      count_flipped += 1;
-      lattice[s.get<0>()][s.get<1>()][s.get<2>()] *= -1;
-      M +=  2 * lattice[s.get<0>()][s.get<1>()][s.get<2>()];
-      E -= dE;
-    }
-    */
     if (u(random_engine) < w) {
       count_flipped += 1;
       lattice[s.get<0>()][s.get<1>()][s.get<2>()] *= -1;
@@ -308,13 +302,14 @@ int main() {
     string output_filename;
     vector<double> sweep;
     unsigned int mcs = 2000; // NUmber of Monte Carlo steps per site.
-    read_input(lsize, num_steps, mcs, init_K, final_K, sweep);
+    read_input(lsize, num_steps, mcs, init_K, final_K, sweep, output_filename);
     Lattice lattice(boost::extents[lsize][lsize][lsize]);
     cout << "Done Initializing" << endl;
 
     // Set output file configurations
     ofstream readme;
-    readme.open("./output_30/readme.txt");
+    string s_readme = "./" + output_filename + "/readme.txt";
+    readme.open(s_readme);
     readme << "Number of MCS: " << mcs << endl;
     readme << "Lattice Size: " << lsize << endl;
     readme << "K,T" << endl;
@@ -337,7 +332,7 @@ int main() {
         initialize(lattice, weights, K, M, E, coldstart);
         string ofile;
         string ind = to_string(i);
-        ofile = "./output_30/";
+        ofile = "./" + output_filename + "/";
         if (coldstart == -1){
           ofile += "hot_";
         } else {
