@@ -16,10 +16,14 @@
 
 using namespace std;
 ofstream ofile;
+// The boost linear algebra C++ library is used to implement
+// multidimensional arrays and tuples efficiently and reliably.
 typedef boost::multi_array<int, 3> Lattice;
 typedef Lattice::index coord;
 typedef boost::tuple<int, int, int > site;
 
+// Set a different seed for the random number generator
+// at every run using the current time.
 int seed = time(0);
 default_random_engine random_engine(seed);
 
@@ -28,6 +32,9 @@ inline int periodic(int i, const int limit, int add) {
   // the 2D ising model example by Hjorth Jensen.
   return (i + limit + add) % (limit);
 }
+
+
+// ======================Function Declarations======================
 
 void read_input(unsigned int&, unsigned int&, unsigned int&, double&, double&, string&, vector<double>&);
 void initialize(Lattice&, map<int, double>&, double&, double&, double&);
@@ -40,9 +47,27 @@ vector<site> find_cluster(Lattice &lattice, const unsigned int lsize, const doub
 vector<site> find_neighbors(const site, const unsigned int);
 void test_update(Lattice& lattice, const unsigned int lsize);
 
+
+// ======================Function Implementations======================
+
 void read_input(unsigned int &lsize, unsigned int &num_steps, unsigned int &mcs,
   double &init_T, double &final_T, vector<double> &sweep, string &path) {
-  // Function to read configurations for Monte Carlo pass.
+  /*
+  Function to read initial configurations of MC simulation.
+  Inputs: 
+    lsize: Linear dimension of the lattice
+    num_steps: Number of steps between initial T and final T
+    used in temeperature sweep
+    mcs: Number of Monte Carlo steps per site
+    init_T: intial temperature
+    final_T: final temperature
+    sweep: vector containing values for each temperature used
+    during sweep
+    path: path to output directory containing MC history files. 
+
+    Returns:
+      None (a void function)
+  */
   cout << "Enter lattice size: " << endl;
   cin >> lsize;
   cout << "Enter initial T: " << endl;
@@ -61,23 +86,41 @@ void read_input(unsigned int &lsize, unsigned int &num_steps, unsigned int &mcs,
     t = init_T + T_step * (double) i;
     sweep.push_back(t);
   }
+  // For display to terminal during debugging and monitoring.
   cout << "Temperature Sweep Range:" << endl;
   for (auto k : sweep) {
     cout << "T = " << k << endl;
   }
 }
 
+
 void initialize( Lattice &lattice, map<int, double> &weights, double &K,
 double &M, double &E, const int &coldstart) {
+  /*
+  Function for setting initial state, Boltzmann weights, and observables.
+
+  Inputs: 
+    lattice: A 3D multidimensional boost array
+    weights: A dictionary (ref to std::map) for saving precalculated weights. 
+    K: The value of the current temperature. 
+    M: (double) Magnetization
+    E: (double) Energy
+    coldstart: 1 for setting all sites = 1, -1 for setting all sites randomly 
+    between -1 and 1. 
+  
+  Returns: 
+    None (a void function)
+  */
   static uniform_int_distribution<int> u(0,1);
   unsigned int lsize = 0;
   lsize = lattice.size();
+  // Refresh Magnetization and Energy
   M = 0;
   E = 0;
+  // Set initial state for new MC run
   for (auto i = 0; i != lsize; ++i) {
     for (auto j = 0; j != lsize; ++j) {
       for (auto k = 0; k != lsize; ++k) {
-          // Call random number generator and initialize lattice
           if (u(random_engine) == 1) {
             lattice[i][j][k] = 1;
           } else {
@@ -88,6 +131,7 @@ double &M, double &E, const int &coldstart) {
       }
     }
   }
+  // After initializing lattice, compute initial energy:
   for (auto i = 0; i != lsize; ++i) {
     for (auto j = 0; j != lsize; ++j) {
       for (auto k = 0; k != lsize; ++k) {
@@ -98,10 +142,15 @@ double &M, double &E, const int &coldstart) {
       }
     }
   }
-  // Initializing weights for metropolis
+  /*
+  Initializing boltzmann weights to be used in each metropolis step.
+  This allows us to avoid computing exp(dE) at every step, which is
+  computationally expensive due to the exponential function.
+  */
   weights.insert(pair<int, double>(-12, exp(-12.0 * K)));
   weights.insert(pair<int, double>(-8, exp(-8.0 * K)));
   weights.insert(pair<int, double>(-4, exp(-4.0 * K)));
+  weights.insert(pair<int, double>(0, 1.0));
   weights.insert(pair<int, double>(4, 1.0));
   weights.insert(pair<int, double>(8, 1.0));
   weights.insert(pair<int, double>(12, 1.0));
@@ -110,8 +159,19 @@ double &M, double &E, const int &coldstart) {
   cout << "Initial E = " << E / ((double) lsize*lsize*lsize) << endl;
 }
 
+
 site choose_random_site(const unsigned int lsize) {
-  // Helper function for choosing random site.
+  /*
+  A helper function for choosing a random site on the lattice, 
+  using periodic boundary conditions.
+
+  Inputs: 
+    lsize: Linear dimension of the lattice. 
+
+  Returns: 
+    s (site): A randomly selected site object (3D tuple) from the lattice. 
+    A site object consists of three coordinate indices. 
+  */
   static uniform_int_distribution<int> u(0, lsize-1);
   int idx, idy, idz = {0};
   idx = u(random_engine);
@@ -122,6 +182,18 @@ site choose_random_site(const unsigned int lsize) {
 }
 
 vector<site> find_neighbors(const site s, const unsigned int lsize) {
+  /*
+  A helper function for finding the six neighboring sites, given
+  a specific site on the lattice.
+
+  Inputs: 
+    site s: A site object indicating the current site.
+    lsize: Linear dimension of the lattice
+
+  Returns:
+    neighbors: A std::vector of sites containing the site objects 
+    for the six neighbors of site s. 
+  */
   vector<site> neighbors;
   int idx, idy, idz = {0};
   idx = s.get<0>();
@@ -150,7 +222,18 @@ vector<site> find_neighbors(const site s, const unsigned int lsize) {
   return neighbors;
 }
 
+
 int deltaE(site s, Lattice& lattice, const unsigned int lsize, const double& K) {
+  /*
+  Helper function for computing the change in free energy that would
+  occur if a site is to be flipped. 
+
+  Inputs: 
+    site s: The current site in consideration
+    lattice: 3D multidimensional boost array modeling the lattice.
+    lsize: Linear dimension of the lattice.
+    K: Current temperature
+  */
   int dE = 0;
   vector<site> neighbors = find_neighbors(s, lsize);
   for (auto n : neighbors) {
@@ -164,6 +247,9 @@ int deltaE(site s, Lattice& lattice, const unsigned int lsize, const double& K) 
 
 void metropolis(Lattice &lattice, const unsigned int lsize,
 const double &K, double& M, double& E, map<int, double>& weights) {
+  /*
+  Implements the Metropolis Algorithm
+  */
   unsigned int count_flipped = 0;
   unsigned int n = lsize*lsize*lsize;
   double w = 0.0;
@@ -340,6 +426,7 @@ int main() {
         }
         ofile = ofile + ind + ".csv";
         write_data(mcs, lsize, ofile, lattice, K, M, E, weights);
+        cout << endl;
       }
     }
     /*

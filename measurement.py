@@ -93,9 +93,9 @@ def process_data_for_plotting(path, size_multiplier=1, sampling_block=50,
             raise NameError
         index = int(index[0])
         fname = path + '/' + str(fname)
-        beta = sweep.at[index, 'T']
-        data_dict['K'] = sweep.at[index, 'K']
-        data_dict['T'] = beta  # We set k_B = 1
+        beta = sweep.at[index, 'K']
+        data_dict['K'] = beta
+        data_dict['T'] = 1/beta  # We set k_B = 1
         estimates = bootstrap(fname, system_size, beta, repeat, thermalization)
         data_dict.update(estimates)
         rows_list.append(data_dict)
@@ -126,6 +126,7 @@ def autocorrelation(name, t, df_raw):
     '''
     Calculate autocorrelation function of a variable "name".
     '''
+    df_raw = df_raw.reset_index(drop=True)
     tmax = len(df_raw)
     assert t < tmax
     chi = 0
@@ -139,6 +140,40 @@ def autocorrelation(name, t, df_raw):
 
     return chi
 
+def autocorrelation_fft(name, df_raw):
+    '''
+    Computes the autocorrelation function for all times t
+    using the Discrete Fourier Transform.
+    '''
+    n = len(df_raw)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 
+    f = np.asarray(df_raw[name])
+    fvi = np.fft.fft(f, n=2*n)
+    acf = np.real(np.fft.ifft(np.multiply(fvi, np.conjugate(fvi)))[:n])
+    acf = acf / n
+    return acf
+
+def compute_integrated_autocorrelation(df_raw, name):
+    '''
+    Function for computing the integrated autocorrelation
+    for a given time series (monte carlo run)
+    '''
+    const = 5
+    df = df_raw.reset_index(drop=True)
+    chi, tau = 0, 1
+    m = 0
+    var = np.var(df[name])
+    for i in range(len(df)):
+        chi = autocorrelation(name, i, df)
+        if i == 0:
+            print(chi)
+            print(np.var(df[name]))
+        tau += 2 * chi / var
+        if i >= const * tau:
+            m = i
+            break
+    print("Tau = {0}, M = {1}, X(0) = {2}".format(tau, m, var))
+    return tau
+    
 
 def plot_observable(df, system_size, sweep, obs_name, fmt='ks'):
     '''
@@ -159,8 +194,10 @@ def generate_equilibration_plots(path, name):
     Generate time series plots for each temperature run for
     determinations of equilibriation. 
     '''
-    cold_files = [f for f in os.listdir(path) if re.match(r'cold.*\.csv', f)]
-    hot_files = [f for f in os.listdir(path) if re.match(r'hot.*\.csv', f)]
+    cold_files = sorted([f for f in os.listdir(path) if re.match(r'cold.*\.csv', f)])
+    hot_files = sorted([f for f in os.listdir(path) if re.match(r'hot.*\.csv', f)])
+    print(cold_files)
+    print(hot_files)
     for c, h in zip(cold_files, hot_files):
         path_c = path + "/" + c
         path_h = path + "/" + h
@@ -172,5 +209,7 @@ def generate_equilibration_plots(path, name):
         ax.grid(linestyle='--')
         ax.set_xlabel('Time (Monte Carlo step per site)', fontsize=15)
         ax.set_ylabel(name, fontsize=15)
-        num = re.findall(r'.*([0-9]+).*', c)[0]
+        num = re.findall(r'.*_([0-9]+).csv', c)[0]
+        print(num)
         fig.savefig(path + "/" + num + ".pdf")
+        plt.close()
