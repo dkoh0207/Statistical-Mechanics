@@ -196,8 +196,6 @@ def generate_equilibration_plots(path, name):
     '''
     cold_files = sorted([f for f in os.listdir(path) if re.match(r'cold.*\.csv', f)])
     hot_files = sorted([f for f in os.listdir(path) if re.match(r'hot.*\.csv', f)])
-    print(cold_files)
-    print(hot_files)
     for c, h in zip(cold_files, hot_files):
         path_c = path + "/" + c
         path_h = path + "/" + h

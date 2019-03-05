@@ -12,14 +12,11 @@
 #include <map>
 #include <ctime>
 
-// =======================<Custiom Datatypes>=======================
-
 using namespace std;
-typedef boost::multi_array<int, 4> Lattice;
+typedef boost::multi_array<int, 5> Lattice;
 typedef Lattice::index coord;
-typedef boost::tuple<int, int, int, int> site;
+typedef boost::tuple<int, int, int, int, int> site;
 
-int seed = time(0);
 random_device rd;
 mt19937_64 mt(rd());
 
@@ -29,8 +26,6 @@ inline int periodic(int i, const int limit, int add) {
     return (i + limit + add) % (limit);
 }
 
-// =======================<Function Declarations>=======================
-
 void read_input(unsigned int&, unsigned int&, unsigned int&, 
 double&, double&, vector<double>&, string &);
 double compute_free_energy(Lattice &lattice, const unsigned int lsize, 
@@ -38,13 +33,11 @@ const unsigned int n_bonds, const double & K);
 void initialize(Lattice &lattice, const unsigned int lsize, const unsigned int n_bonds, 
 double &K, double& E, const int &coldstart, map<int, double> & weights);
 double deltaE(Lattice &lattice, site &bond,
-const unsigned int lsize, const unsigned int n_bonds, const double &K);
+const unsigned int lsize, const unsigned int n_bonds);
 site choose_random_bond(const unsigned int lsize, const unsigned int n_bonds);
 void metropolis(Lattice &lattice, const unsigned int lsize, 
-const unsigned int n_bonds, const double &K, double &E);
+const unsigned int n_bonds, double &E);
 int compute_wilson_loop(Lattice &lattice, const unsigned int l);
-
-// =======================<Function Implementations>=======================
 
 
 void read_input(unsigned int &lsize, unsigned int &num_steps, unsigned int &mcs,
@@ -79,27 +72,37 @@ double compute_free_energy(Lattice &lattice,
 const unsigned int lsize, const unsigned int n_bonds, const double & K) {
 
     double E_temp = 0.0;
-    double plaquettes = 0.0;
+    vector<unsigned int> coords(5);
 
     for (auto i = 0; i != lsize; ++i) {
-        for (auto j = 0; j != lsize; ++j) {
-            for (auto k = 0; k != lsize; ++k) {
-                plaquettes = 0.0;
-                // Square plaquette in the (1,2) direction. 
-                plaquettes += (double) (lattice[i][j][k][0] * lattice[i][j][k][1]
-                * lattice[periodic(i, lsize, 1)][j][k][1] 
-                * lattice[i][periodic(j, lsize, 1)][k][0]);
-                // Square plaquette in the (2,3) direction.
-                plaquettes += (double) (lattice[i][j][k][1] * lattice[i][j][k][2]
-                * lattice[i][periodic(j, lsize, 1)][k][2]
-                * lattice[i][j][periodic(k, lsize, 1)][1]);
-                // Square plaquette in the (1,3) direction.
-                plaquettes += (double) (lattice[i][j][k][0] * lattice[i][j][k][2]
-                * lattice[periodic(i, lsize, 1)][j][k][2]
-                * lattice[i][j][periodic(k, lsize, 1)][0]);
-                E_temp += plaquettes;
+      for (auto j = 0; j != lsize; ++j) {
+        for (auto k = 0; k != lsize; ++k) {
+          for (auto l = 0; l != lsize; ++l) {
+            double plaquettes = 0.0;
+            // Now compute plaquettes, (4 choose 2) = 6 of them
+            coords[0] = i;
+            coords[1] = j;
+            coords[2] = k;
+            coords[3] = l;
+            for (auto d = 0; d != n_bonds; ++d) {
+              for (auto dperp = 0; dperp != n_bonds; ++dperp) {
+                if (d < dperp) { // Less than because we don't want to count (0,1) and (1,0)
+                // directed plaquettes twice for each site. 
+                  plaquettes += lattice[coords[0]][coords[1]][coords[2]][coords[3]][d] * 
+                  lattice[coords[0]][coords[1]][coords[2]][coords[3]][dperp];
+                  coords[d] = periodic(coords[d], lsize, 1);
+                  plaquettes *= lattice[coords[0]][coords[1]][coords[2]][coords[3]][dperp];
+                  coords[d] = periodic(coords[d], lsize, -1);
+                  coords[dperp] = periodic(coords[dperp], lsize, 1);
+                  plaquettes *= lattice[coords[0]][coords[1]][coords[2]][coords[3]][d];
+                  coords[dperp] = periodic(coords[dperp], lsize, -1);
+                }
+              }
             }
+            E_temp += plaquettes;
+          }
         }
+      }
     }
     return E_temp;
 }
@@ -116,24 +119,28 @@ double &K, double& E, const int &coldstart, map<int, double> &weights) {
 
     // Initialize bonds on lattice
     for (auto i = 0; i != lsize; ++i) {
-        for (auto j = 0; j != lsize; ++j) {
-            for (auto k = 0; k != lsize; ++k) {
-                for (auto b = 0; b != n_bonds; ++b) {
-                    if (u(mt) == 1) {
-                        lattice[i][j][k][b] = 1;
-                    } else {
-                        lattice[i][j][k][b] = coldstart;
-                    }
-                }
+      for (auto j = 0; j != lsize; ++j) {
+        for (auto k = 0; k != lsize; ++k) {
+          for (auto l = 0; l != lsize; ++l) {
+            for (auto b = 0; b != n_bonds; ++b) {
+              if (u(mt) == 1) {
+                  lattice[i][j][k][l][b] = 1;
+              } else {
+                  lattice[i][j][k][l][b] = coldstart;
+              }
             }
+          }
         }
+      }
     }
     // Initializing weights for metropolis
+    weights.insert(pair<int, double>(-12, exp(-12.0 * K)));
     weights.insert(pair<int, double>(-8, exp(-8.0 * K)));
     weights.insert(pair<int, double>(-4, exp(-4.0 * K)));
     weights.insert(pair<int, double>(0, 1.0));
     weights.insert(pair<int, double>(4, 1.0));
     weights.insert(pair<int, double>(8, 1.0));
+    weights.insert(pair<int, double>(12, 1.0));
 
     // Compute free energy of the whole lattice
     E = compute_free_energy(lattice, lsize, n_bonds, K);
@@ -142,14 +149,15 @@ double &K, double& E, const int &coldstart, map<int, double> &weights) {
 
 
 double deltaE(Lattice &lattice, site &bond,
-const unsigned int lsize, const unsigned int n_bonds, const double &K) {
+const unsigned int lsize, const unsigned int n_bonds) {
     double dE = 0.0;
     double plaq_sum = 0.0;
-    vector<int> ind(3);
+    vector<int> ind(4);
     int b = 0;
     ind[0] = bond.get<0>();
     ind[1] = bond.get<1>();
     ind[2] = bond.get<2>();
+    ind[3] = bond.get<3>();
     b  = bond.get<3>();
     for (int m = 0; m != n_bonds; ++m) {
         double plaq = 0.0;
@@ -157,21 +165,21 @@ const unsigned int lsize, const unsigned int n_bonds, const double &K) {
         // This particular implementation of computing the energy
         // is borrowed from Michael Cruetz's z2 lattice gauge simulation.
         if (m != b) {
-            plaq = lattice[ind[0]][ind[1]][ind[2]][b];
+            plaq = lattice[ind[0]][ind[1]][ind[2]][ind[3]][b];
             ind[m] = periodic(ind[m], lsize, -1);
-            plaq *= lattice[ind[0]][ind[1]][ind[2]][m] * 
-            lattice[ind[0]][ind[1]][ind[2]][b];
+            plaq *= lattice[ind[0]][ind[1]][ind[2]][ind[3]][m] * 
+            lattice[ind[0]][ind[1]][ind[2]][ind[3]][b];
             ind[b] = periodic(ind[b], lsize, 1);
-            plaq *= lattice[ind[0]][ind[1]][ind[2]][m];
+            plaq *= lattice[ind[0]][ind[1]][ind[2]][ind[3]][m];
             plaq_sum += plaq;
             ind[m] = periodic(ind[m], lsize, 1);
-            plaq = lattice[ind[0]][ind[1]][ind[2]][m];
+            plaq = lattice[ind[0]][ind[1]][ind[2]][ind[3]][m];
             ind[m] = periodic(ind[m], lsize, 1);
             ind[b] = periodic(ind[b], lsize, -1);
-            plaq *= lattice[ind[0]][ind[1]][ind[2]][b];
+            plaq *= lattice[ind[0]][ind[1]][ind[2]][ind[3]][b];
             ind[m] = periodic(ind[m], lsize, -1);
-            plaq *= lattice[ind[0]][ind[1]][ind[2]][m] * 
-            lattice[ind[0]][ind[1]][ind[2]][b];
+            plaq *= lattice[ind[0]][ind[1]][ind[2]][ind[3]][m] * 
+            lattice[ind[0]][ind[1]][ind[2]][ind[3]][b];
             plaq_sum += plaq;
         }
     }
@@ -184,18 +192,19 @@ site choose_random_bond(const unsigned int lsize, const unsigned int n_bonds) {
     // Helper function for choosing random site.
     static uniform_int_distribution<int> u(0, lsize-1);
     static uniform_int_distribution<int> bond(0, n_bonds-1);
-    int idx, idy, idz, b = {0};
+    int idx, idy, idz, idw, b = {0};
     idx = u(mt);
     idy = u(mt);
     idz = u(mt);
+    idw = u(mt);
     b = bond(mt);
-    site s(idx, idy, idz, b);
+    site s(idx, idy, idz, idw, b);
     return s;
 }
 
 
 void metropolis(Lattice &lattice, const unsigned int lsize, const unsigned int n_bonds,
-const double &K, double &E, map<int, double> &weights) {
+double &E, map<int, double> &weights) {
     unsigned int N = lsize*lsize*lsize*n_bonds;
     //unsigned int N = 1;
     double w = 0.0;
@@ -203,11 +212,11 @@ const double &K, double &E, map<int, double> &weights) {
     double dE = 0.0;
     for (auto i = 0; i != N; ++i) {
         site s = choose_random_bond(lsize, n_bonds);
-        dE = deltaE(lattice, s, lsize, n_bonds, K);
+        dE = deltaE(lattice, s, lsize, n_bonds);
         w = weights[dE];
         if (u(mt) < w) {
             E += dE;
-            lattice[s.get<0>()][s.get<1>()][s.get<2>()][s.get<3>()] *= -1;
+            lattice[s.get<0>()][s.get<1>()][s.get<2>()][s.get<3>()][s.get<4>()] *= -1;
         }
     }
 }
@@ -218,16 +227,16 @@ int compute_wilson_loop(Lattice &lattice, const unsigned int l) {
     int wilson_loop = 1;
 
     for (auto i = 0; i < l; ++i) {
-        wilson_loop *= lattice[i][0][0][0];
+        wilson_loop *= lattice[i][0][0][0][0];
     }
     for (auto i = 0; i < l; ++i) {
-        wilson_loop *= lattice[l][i][0][1];
+        wilson_loop *= lattice[l][i][0][0][1];
     }
     for (int i = l-1; i >= 0; --i) {
-        wilson_loop *= lattice[i][l][0][0];
+        wilson_loop *= lattice[i][l][0][0][0];
     }
     for (int i = l-1; i >= 0; --i) {
-        wilson_loop *= lattice[0][i][0][1];
+        wilson_loop *= lattice[0][i][0][0][1];
     }
 
     return wilson_loop;
@@ -243,7 +252,7 @@ Lattice& lattice, double& K, double& E, map<int, double> &weights) {
   ofstream result;
   result.open(output_filename);
   string columns = "E,E2";
-  for (auto i = 1; i < lsize; i += 2) {
+  for (auto i = 1; i < lsize; ++i) {
       columns += ",W";
       columns += to_string(i);
   }
@@ -255,7 +264,7 @@ Lattice& lattice, double& K, double& E, map<int, double> &weights) {
       //cout << "E_test = " << compute_free_energy(lattice, lsize, n_bonds, K) << endl;
       //test_update(lattice, lsize);
     }
-    metropolis(lattice, lsize, n_bonds, K, E, weights);
+    metropolis(lattice, lsize, n_bonds, E, weights);
     energy = E / ((double) n);
     result << setprecision(8) << energy << "," << energy * energy;
     for (auto j = 1; j < lsize; j += 2) {
@@ -267,7 +276,6 @@ Lattice& lattice, double& K, double& E, map<int, double> &weights) {
   cout << endl;
 }
 
-
 int main() {
 
     // Initializing Step
@@ -276,16 +284,15 @@ int main() {
     double K, T = 0.0;
     K = 0.5;
     lsize = 10;
-    unsigned int N = lsize * lsize * lsize;
     string output_filename;
     vector<double> sweep;
     unsigned int mcs = 1; // NUmber of Monte Carlo steps per site.
-    unsigned int n_bonds = 3;
+    unsigned int n_bonds = 4;
     read_input(lsize, num_steps, mcs, init_K, 
     final_K, sweep, output_filename);
 
     // Set the lattice
-    Lattice lattice(boost::extents[lsize][lsize][lsize][n_bonds]);
+    Lattice lattice(boost::extents[lsize][lsize][lsize][lsize][n_bonds]);
     cout << "Lattice size = " << lattice.size() << endl;
 
     // Set output file configurations
@@ -321,6 +328,5 @@ int main() {
         write_data(mcs, lsize, n_bonds, ofile, lattice, K, E, weights);
       }
     }
-
     return 0;
 }
