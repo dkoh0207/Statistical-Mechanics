@@ -15,9 +15,12 @@
 // =======================<Custiom Datatypes>=======================
 
 using namespace std;
-typedef boost::multi_array<int, 4> Lattice;
-typedef Lattice::index coord;
-typedef boost::tuple<int, int, int, int> site;
+typedef boost::multi_array<int, 4> BondLattice;
+typedef boost::multi_array<int, 3> SiteLattice;
+typedef BondLattice::index b_coord;
+typedef SiteLattice::index coord;
+typedef boost::tuple<int, int, int> site;
+typedef boost::tuple<int, int, int, int> bond;
 
 int seed = time(0);
 random_device rd;
@@ -33,16 +36,18 @@ inline int periodic(int i, const int limit, int add) {
 
 void read_input(unsigned int&, unsigned int&, unsigned int&,
 double&, double&, vector<double>&, string &);
-double compute_free_energy(Lattice &lattice, const unsigned int lsize,
+double compute_gauge_energy(BondLattice &lattice, const unsigned int lsize,
 const unsigned int n_bonds, const double & K);
-void initialize(Lattice &lattice, const unsigned int lsize, const unsigned int n_bonds,
-double &K, double& E, const int &coldstart, map<int, double> & weights);
-double deltaE(Lattice &lattice, site &bond,
-const unsigned int lsize, const unsigned int n_bonds, const double &K);
-site choose_random_bond(const unsigned int lsize, const unsigned int n_bonds);
-void metropolis(Lattice &lattice, const unsigned int lsize,
+void initialize(SiteLattice &lattice, const unsigned int lsize, const unsigned int n_bonds,
+double& E, const int &coldstart, map<int, double> & weights);
+int deltaE(BondLattice &lattice, site &bond,
+const unsigned int lsize, const unsigned int n_bonds);
+int deltaE(SiteLattice& slattice, BondLattice& blattice, 
+site s, const unsigned int lsize, const double& K);
+bond choose_random_bond(const unsigned int lsize, const unsigned int n_bonds);
+void metropolis(BondLattice &lattice, const unsigned int lsize,
 const unsigned int n_bonds, const double &K, double &E);
-int compute_wilson_loop(Lattice &lattice, const unsigned int l);
+int compute_wilson_loop(BondLattice &lattice, const unsigned int l);
 
 // =======================<Function Implementations>=======================
 
@@ -75,12 +80,15 @@ void read_input(unsigned int &lsize, unsigned int &num_steps, unsigned int &mcs,
 }
 
 
-double compute_free_energy(Lattice &lattice,
+double compute_gauge_energy(BondLattice &lattice,
 const unsigned int lsize, const unsigned int n_bonds, const double & K) {
 
     double E_temp = 0.0;
     double plaquettes = 0.0;
-
+    /*
+    This particular implementation of calculating dE in lattice gauge theory
+    is borrowed from Michael Cruetz's article "Simulating Quarks"
+    */
     for (auto i = 0; i != lsize; ++i) {
         for (auto j = 0; j != lsize; ++j) {
             for (auto k = 0; k != lsize; ++k) {
@@ -105,7 +113,7 @@ const unsigned int lsize, const unsigned int n_bonds, const double & K) {
 }
 
 
-void initialize(Lattice &lattice, const unsigned int lsize, const unsigned int n_bonds,
+void initialize(BondLattice &lattice, const unsigned int lsize, const unsigned int n_bonds,
 double &K, double& E, const int &coldstart, map<int, double> &weights) {
     /*
     Function for initializing all bonds in the lattice.
@@ -129,30 +137,111 @@ double &K, double& E, const int &coldstart, map<int, double> &weights) {
         }
     }
     // Initializing weights for metropolis
+    weights.insert(pair<int, double>(-12, exp(-12.0 * K)));
     weights.insert(pair<int, double>(-8, exp(-8.0 * K)));
     weights.insert(pair<int, double>(-4, exp(-4.0 * K)));
     weights.insert(pair<int, double>(0, 1.0));
     weights.insert(pair<int, double>(4, 1.0));
     weights.insert(pair<int, double>(8, 1.0));
-
+    weights.insert(pair<int, double>(12, 1.0));
     // Compute free energy of the whole lattice
-    E = compute_free_energy(lattice, lsize, n_bonds, K);
+    E = compute_gauge_energy(lattice, lsize, n_bonds, K);
     cout << "Initial E = " << E << endl;
 }
 
 
-double deltaE(Lattice &lattice, site &bond,
-const unsigned int lsize, const unsigned int n_bonds, const double &K) {
-    double dE = 0.0;
-    double plaq_sum = 0.0;
+vector<site> find_neighbors(const site s, const unsigned int lsize) {
+  /*
+  A helper function for finding the six neighboring sites, given
+  a specific site on the lattice.
+
+  Inputs: 
+    site s: A site object indicating the current site.
+    lsize: Linear dimension of the lattice
+
+  Returns:
+    neighbors: A std::vector of sites containing the site objects 
+    for the six neighbors of site s. 
+  */
+  vector<site> neighbors;
+  int idx, idy, idz = {0};
+  idx = s.get<0>();
+  idy = s.get<1>();
+  idz = s.get<2>();
+  for (auto i = 0; i != 3; ++i) {
+    if (i == 0) {
+      site n1(periodic(idx, lsize, 1), idy, idz);
+      site n2(periodic(idx, lsize, -1), idy, idz);
+      neighbors.push_back(n1);
+      neighbors.push_back(n2);
+    }
+    if (i == 1) {
+      site n1(idx, periodic(idy, lsize, 1), idz);
+      site n2(idx, periodic(idy, lsize, -1), idz);
+      neighbors.push_back(n1);
+      neighbors.push_back(n2);
+    }
+    if (i == 2) {
+      site n1(idx, idy, periodic(idz, lsize, 1));
+      site n2(idx, idy, periodic(idz, lsize, -1));
+      neighbors.push_back(n1);
+      neighbors.push_back(n2);
+    }
+  }
+  return neighbors;
+}
+
+
+int deltaE(SiteLattice& slattice, BondLattice& blattice, 
+site s, const unsigned int lsize) {
+  /*
+  Helper function for computing the change in free energy that would
+  occur if a site is to be flipped. 
+
+  Inputs: 
+    site s: The current site in consideration
+    lattice: 3D multidimensional boost array modeling the lattice.
+    lsize: Linear dimension of the lattice.
+    K: Current temperature
+  */
+  int dE = 0;
+  int direction = 0;
+  vector<site> neighbors = find_neighbors(s, lsize);
+  for (auto i = 0; i < neighbors.size(); ++i) {
+      direction = i / 2; // Direction of the link
+      if (i % 2 == 0) {
+          // + Direction with respect to current site
+          // At this point, we know (or depend on) the fact that
+          // the neighboring sites in "neighbors" are added sequentially in each axis. 
+          int other = slattice[neighbors[i].get<0>()][neighbors[i].get<1>()][neighbors[i].get<2>()];
+          int link = blattice[s.get<0>()][s.get<1>()][s.get<2>()][direction];
+          dE += other * link;
+      }
+      else {
+        // Opposite direction from above:
+        int other = slattice[neighbors[i].get<0>()][neighbors[i].get<1>()][neighbors[i].get<2>()];
+        int link = blattice[neighbors[i].get<0>()][neighbors[i].get<1>()][neighbors[i].get<2>()][direction];
+        dE += other * link;
+      }
+  }
+  dE = dE * slattice[s.get<0>()][s.get<1>()][s.get<2>()];
+  dE = -dE * 2;
+  return dE;
+}
+
+
+int deltaE(BondLattice &lattice, bond &link,
+const unsigned int lsize, const unsigned int n_bonds) {
+    int dE = 0.0;
+    int plaq_sum = 0.0;
     vector<int> ind(3);
     int b = 0;
-    ind[0] = bond.get<0>();
-    ind[1] = bond.get<1>();
-    ind[2] = bond.get<2>();
-    b  = bond.get<3>();
+    ind[0] = link.get<0>();
+    ind[1] = link.get<1>();
+    ind[2] = link.get<2>();
+    b  = link.get<3>();
     for (int m = 0; m != n_bonds; ++m) {
-        double plaq = 0.0;
+        int plaq = 0.0;
         plaq = 0;
         // This particular implementation of computing the energy
         // is borrowed from Michael Cruetz's z2 lattice gauge simulation.
@@ -180,40 +269,72 @@ const unsigned int lsize, const unsigned int n_bonds, const double &K) {
 }
 
 
-site choose_random_bond(const unsigned int lsize, const unsigned int n_bonds) {
+site choose_random_site(const unsigned int lsize) {
+  /*
+  A helper function for choosing a random site on the lattice, 
+  using periodic boundary conditions.
+
+  Inputs: 
+    lsize: Linear dimension of the lattice. 
+
+  Returns: 
+    s (site): A randomly selected site object (3D tuple) from the lattice. 
+    A site object consists of three coordinate indices. 
+  */
+  static uniform_int_distribution<int> u(0, lsize-1);
+  int idx, idy, idz = {0};
+  idx = u(mt);
+  idy = u(mt);
+  idz = u(mt);
+  site s(idx, idy, idz);
+  return s;
+}
+
+
+bond choose_random_bond(const unsigned int lsize, const unsigned int n_bonds) {
     // Helper function for choosing random site.
     static uniform_int_distribution<int> u(0, lsize-1);
-    static uniform_int_distribution<int> bond(0, n_bonds-1);
-    int idx, idy, idz, b = {0};
+    static uniform_int_distribution<int> b(0, n_bonds-1);
+    int idx, idy, idz, ib = {0};
     idx = u(mt);
     idy = u(mt);
     idz = u(mt);
-    b = bond(mt);
-    site s(idx, idy, idz, b);
+    ib = b(mt);
+    bond s(idx, idy, idz, ib);
     return s;
 }
 
 
-void metropolis(Lattice &lattice, const unsigned int lsize, const unsigned int n_bonds,
+void metropolis(SiteLattice &slattice, BondLattice &blattice, 
+const unsigned int lsize, const unsigned int n_bonds,
 const double &K, double &E, map<int, double> &weights) {
     unsigned int N = lsize*lsize*lsize*n_bonds;
     //unsigned int N = 1;
     double w = 0.0;
     static uniform_real_distribution<double> u(0,1);
-    double dE = 0.0;
+    int dE = 0;
     for (auto i = 0; i != N; ++i) {
-        site s = choose_random_bond(lsize, n_bonds);
-        dE = deltaE(lattice, s, lsize, n_bonds, K);
+        site s = choose_random_site(lsize);
+        bond b = choose_random_bond(lsize, n_bonds);
+        dE = deltaE(blattice, b, lsize, n_bonds);
         w = weights[dE];
+        // Metropolis update of a single bond
         if (u(mt) < w) {
             E += dE;
-            lattice[s.get<0>()][s.get<1>()][s.get<2>()][s.get<3>()] *= -1;
+            blattice[b.get<0>()][b.get<1>()][b.get<2>()][b.get<3>()] *= -1;
+        }
+        dE = deltaE(slattice, blattice, s, lsize);
+        w = weights[dE];
+        // Metropolis update of a single site
+        if (u(mt) < w) {
+          E += dE;
+          slattice[s.get<0>()][s.get<1>()][s.get<2>()] *= -1;
         }
     }
 }
 
 
-int compute_wilson_loop(Lattice &lattice, const unsigned int l) {
+int compute_wilson_loop(BondLattice &lattice, const unsigned int l) {
 
     int wilson_loop = 1;
 
@@ -236,7 +357,7 @@ int compute_wilson_loop(Lattice &lattice, const unsigned int l) {
 
 void write_data(const unsigned int mcs, const unsigned int lsize,
 const unsigned int n_bonds, const string& output_filename,
-Lattice& lattice, double& K, double& E, map<int, double> &weights) {
+SiteLattice& slattice, BondLattice& blattice, double& M, double& K, double& E, map<int, double> &weights) {
   double energy = 0.0;
   int wl = 0;
   int n = lsize*lsize*lsize*n_bonds;
@@ -253,14 +374,13 @@ Lattice& lattice, double& K, double& E, map<int, double> &weights) {
     if (i % 1000 == 0) {
       cout << "i = " << i << endl;
       cout << "E = " << E << endl;
-      cout << "E_test = " << compute_free_energy(lattice, lsize, n_bonds, K) << endl;
+      cout << "E_test = " << compute_gauge_energy(blattice, lsize, n_bonds, K) << endl;
       //test_update(lattice, lsize);
     }
-    metropolis(lattice, lsize, n_bonds, K, E, weights);
     energy = E / ((double) n);
     result << setprecision(8) << energy << "," << energy * energy;
     for (auto j = wilson_unit; j < lsize; j += wilson_unit) {
-        result << setprecision(8) << "," << compute_wilson_loop(lattice, j);
+        result << setprecision(8) << "," << compute_wilson_loop(blattice, j);
     }
     result << endl;
   }
@@ -286,15 +406,16 @@ int main() {
     final_K, sweep, output_filename);
 
     // Set the lattice
-    Lattice lattice(boost::extents[lsize][lsize][lsize][n_bonds]);
-    cout << "Lattice size = " << lattice.size() << endl;
+    SiteLattice ising(boost::extents[lsize][lsize][lsize]);
+    BondLattice gauge(boost::extents[lsize][lsize][lsize][n_bonds]);
+    cout << "SiteLattice size = " << ising.size() << endl;
 
     // Set output file configurations
     ofstream readme;
     string s_readme = "./" + output_filename + "/readme.txt";
     readme.open(s_readme);
     readme << "Number of MCS: " << mcs << endl;
-    readme << "Lattice Size: " << lsize << endl;
+    readme << "SiteLattice Size: " << lsize << endl;
     readme << "K,T" << endl;
     int coldstart = 1;
     for (auto i = 0; i != num_steps; ++i) {
@@ -308,7 +429,7 @@ int main() {
       for (coldstart = -1; coldstart < 2; coldstart += 2) {
         cout << "Coldstart: " << coldstart << endl;
         map<int, double> weights;
-        initialize(lattice, lsize, n_bonds, K, E, coldstart, weights);
+        initialize(gauge, lsize, n_bonds, K, E, coldstart, weights);
         string ofile;
         string ind = to_string(i);
         ofile = "./" + output_filename + "/";
@@ -318,7 +439,7 @@ int main() {
           ofile += "cold_";
         }
         ofile = ofile + ind + ".csv";
-        write_data(mcs, lsize, n_bonds, ofile, lattice, K, E, weights);
+       // write_data(mcs, lsize, n_bonds, ofile, gauge, K, E, weights);
       }
     }
 

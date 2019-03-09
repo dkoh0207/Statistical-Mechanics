@@ -24,8 +24,8 @@ typedef boost::tuple<int, int, int > site;
 
 // Set a different seed for the random number generator
 // at every run using the current time.
-int seed = time(0);
-default_random_engine random_engine(seed);
+random_device rd;
+mt19937_64 mt(rd());
 
 inline int periodic(int i, const int limit, int add) {
   // This implementation of periodic boundary condition is from
@@ -121,7 +121,7 @@ double &M, double &E, const int &coldstart) {
   for (auto i = 0; i != lsize; ++i) {
     for (auto j = 0; j != lsize; ++j) {
       for (auto k = 0; k != lsize; ++k) {
-          if (u(random_engine) == 1) {
+          if (u(mt) == 1) {
             lattice[i][j][k] = 1;
           } else {
             lattice[i][j][k] = coldstart;
@@ -174,9 +174,9 @@ site choose_random_site(const unsigned int lsize) {
   */
   static uniform_int_distribution<int> u(0, lsize-1);
   int idx, idy, idz = {0};
-  idx = u(random_engine);
-  idy = u(random_engine);
-  idz = u(random_engine);
+  idx = u(mt);
+  idy = u(mt);
+  idz = u(mt);
   site s(idx, idy, idz);
   return s;
 }
@@ -260,7 +260,7 @@ const double &K, double& M, double& E, map<int, double>& weights) {
     site s = choose_random_site(lsize);
     dE = deltaE(s, lattice, lsize, K);
     w = weights[dE];
-    if (u(random_engine) < w) {
+    if (u(mt) < w) {
       count_flipped += 1;
       lattice[s.get<0>()][s.get<1>()][s.get<2>()] *= -1;
       M +=  2 * lattice[s.get<0>()][s.get<1>()][s.get<2>()];
@@ -313,7 +313,7 @@ vector<site> find_cluster(Lattice &lattice, const unsigned int lsize, const doub
       double spin_n = (double) lattice[n.get<0>()][n.get<1>()][n.get<2>()];
       double spin_s = (double) lattice[s.get<0>()][s.get<1>()][s.get<2>()];
       double prob = 1 - exp( -2 * K * spin_n * spin_s);
-      r = u(random_engine);
+      r = u(mt);
       if (find(added.begin(), added.end(), n) == added.end() && r < prob) {
         q.push(n);
         added.push_back(n);

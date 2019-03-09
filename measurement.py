@@ -5,7 +5,8 @@ import pandas as pd
 import os
 import re
 from collections import defaultdict, OrderedDict
-
+plt.rcParams["font.family"] = "serif"
+plt.rcParams["mathtext.fontset"] = "dejavuserif"
 
 class MCDataFrame:
 
@@ -196,18 +197,22 @@ def generate_equilibration_plots(path, name):
     '''
     cold_files = sorted([f for f in os.listdir(path) if re.match(r'cold.*\.csv', f)])
     hot_files = sorted([f for f in os.listdir(path) if re.match(r'hot.*\.csv', f)])
-    for c, h in zip(cold_files, hot_files):
-        path_c = path + "/" + c
-        path_h = path + "/" + h
+    _, lsize, sweep = process_meta_info(path)
+    for i, f in enumerate(zip(cold_files, hot_files)):
+        path_c = path + "/" + f[0]
+        path_h = path + "/" + f[1]
         df_cold = pd.read_csv(path_c, skipinitialspace=True)
         df_hot = pd.read_csv(path_h, skipinitialspace=True)
+        title = "$L = {0}$, $T = {1:.3f}$".format(lsize, sweep.at[i, 'T'])
         fig, ax = plt.subplots()
-        ax.errorbar(df_hot.index, df_hot[name], fmt='r-')
-        ax.errorbar(df_cold.index, df_cold[name], fmt='b-')
+        ax.errorbar(df_hot.index, df_hot[name], fmt='r-', label='$T_i = \infty$')
+        ax.errorbar(df_cold.index, df_cold[name], fmt='b-', label='$T_i = 0$')
         ax.grid(linestyle='--')
-        ax.set_xlabel('Time (Monte Carlo step per site)', fontsize=15)
-        ax.set_ylabel(name, fontsize=15)
-        num = re.findall(r'.*_([0-9]+).csv', c)[0]
+        ax.legend(loc='best')
+        ax.set_xlabel('Time (Monte Carlo step per site)', fontsize=13)
+        ax.set_ylabel("${0}$".format(name), fontsize=13)
+        ax.set_title(title, fontsize=14, y=1.05)
+        num = re.findall(r'.*_([0-9]+).csv', f[0])[0]
         print(num)
         fig.savefig(path + "/" + num + ".pdf")
         plt.close()
