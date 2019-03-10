@@ -244,24 +244,28 @@ Lattice& lattice, double& K, double& E, map<int, double> &weights) {
   result.open(output_filename);
   int wilson_unit = 5;
   string columns = "E,E2";
+  /*
   for (auto i = wilson_unit; i < lsize; i += wilson_unit) {
       columns += ",W";
       columns += to_string(i);
   }
+  */
   result << columns << endl;
   for (auto i = 0; i != mcs; ++i) {
     if (i % 1000 == 0) {
       cout << "i = " << i << endl;
       cout << "E = " << E << endl;
-      cout << "E_test = " << compute_free_energy(lattice, lsize, n_bonds, K) << endl;
+      //cout << "E_test = " << compute_free_energy(lattice, lsize, n_bonds, K) << endl;
       //test_update(lattice, lsize);
     }
     metropolis(lattice, lsize, n_bonds, K, E, weights);
     energy = E / ((double) n);
     result << setprecision(8) << energy << "," << energy * energy;
+    /*
     for (auto j = wilson_unit; j < lsize; j += wilson_unit) {
         result << setprecision(8) << "," << compute_wilson_loop(lattice, j);
     }
+    */
     result << endl;
   }
   result.close();
