@@ -11,7 +11,6 @@
 #include <cmath>
 #include <map>
 #include <queue>
-#include <ctime>
 #include <set>
 
 using namespace std;
@@ -25,6 +24,7 @@ typedef boost::tuple<int, int, int > site;
 // Set a different seed for the random number generator
 // at every run using the current time.
 random_device rd;
+// The Mersenne Twister 19937 Random Number Generator
 mt19937_64 mt(rd());
 
 inline int periodic(int i, const int limit, int add) {
@@ -155,6 +155,7 @@ double &M, double &E, const int &coldstart) {
   weights.insert(pair<int, double>(8, 1.0));
   weights.insert(pair<int, double>(12, 1.0));
 
+  // We check the initial magnetization (per site) and energy.
   cout << "Initial M = " << M / ((double) lsize*lsize*lsize) << endl;
   cout << "Initial E = " << E / ((double) lsize*lsize*lsize) << endl;
 }
@@ -174,6 +175,7 @@ site choose_random_site(const unsigned int lsize) {
   */
   static uniform_int_distribution<int> u(0, lsize-1);
   int idx, idy, idz = {0};
+  // Call three random integers, which correspond to coordinates on the lattice.
   idx = u(mt);
   idy = u(mt);
   idz = u(mt);
@@ -233,11 +235,15 @@ int deltaE(site s, Lattice& lattice, const unsigned int lsize, const double& K) 
     lattice: 3D multidimensional boost array modeling the lattice.
     lsize: Linear dimension of the lattice.
     K: Current temperature
+
+  Returns:
+    dE: (double) The change in free energy E_f - E_i. 
+    The convention is that E > 0, so that the free energy is 
+    actually given by -E. 
   */
   int dE = 0;
   vector<site> neighbors = find_neighbors(s, lsize);
   for (auto n : neighbors) {
-    //cout << n.get<0>() << "," << n.get<1>() << "," << n.get<2>() << endl;
     dE += lattice[n.get<0>()][n.get<1>()][n.get<2>()];
   }
   dE = dE * lattice[s.get<0>()][s.get<1>()][s.get<2>()];
@@ -249,10 +255,25 @@ void metropolis(Lattice &lattice, const unsigned int lsize,
 const double &K, double& M, double& E, map<int, double>& weights) {
   /*
   Implements the Metropolis Algorithm
+
+  Inputs: 
+    lattice: A 3D Boost multidimensional array modeling the Ising Lattice.
+    lsize: Linear dimension of the lattice.
+    K: Inverse temperature (reference)
+    M: Magnetization (reference)
+    E: Free Energy (reference)
+    weights: A c++ map (key-value pair) use to efficiently calculate
+    the Boltzmann weights.
+  
+  Returns:
+    None (a void function)
+
   */
   unsigned int count_flipped = 0;
   unsigned int n = lsize*lsize*lsize;
   double w = 0.0;
+  // The static qualifier is to ensure that each distribution is initialized
+  // only once throughout the program. 
   static uniform_real_distribution<double> u(0,1);
   int dE = 0;
   for (auto i = 0; i != n; ++i) {

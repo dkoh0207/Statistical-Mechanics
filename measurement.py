@@ -88,7 +88,7 @@ def bootstrap(df, system_size, beta, sampling_block=200,
 
 
 def process_data_for_plotting(path, size_multiplier=1, sampling_block=200,
-                              write=False, repeat=200, relaxation_list=[]):
+                              write=False, repeat=1000, relaxation_list=[]):
     '''
     Run over all CSV datafiles inside directory and preprocess
     data for use in plotting.

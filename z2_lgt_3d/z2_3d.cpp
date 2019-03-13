@@ -214,7 +214,11 @@ const double &K, double &E, map<int, double> &weights) {
 
 
 int compute_wilson_loop(Lattice &lattice, const unsigned int l) {
-
+    /*
+    Function for computing a Wilson loop of side length l.
+    For simplicity, we will use the Wilson loop oriented
+    on the xy-axis with z = 0.
+    */
     int wilson_loop = 1;
 
     for (auto i = 0; i < l; ++i) {

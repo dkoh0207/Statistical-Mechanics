@@ -226,34 +226,13 @@ double &E, map<int, double> &weights, const unsigned int iterations=1) {
         if (u(mt) < w) {
             E += dE;
             lattice[s.get<0>()][s.get<1>()][s.get<2>()][s.get<3>()][s.get<4>()] *= -1;
-            //std::cout << "E = " << E << endl;
-            //std::cout << "E TEst = " << compute_free_energy(lattice, lsize, n_bonds) << endl;
+            std::cout << "E = " << E / ((double) lsize*lsize*lsize*lsize*6) << endl;
+            std::cout << "E TEst = " << compute_free_energy(lattice, lsize, n_bonds) / ((double) lsize*lsize*lsize*lsize*6) << endl;
             //if (E > lsize*lsize*lsize*lsize*6) {
             //  throw std::invalid_argument( "received negative value" );
             //}
         }
     }
-}
-
-
-int compute_wilson_loop(Lattice &lattice, const unsigned int l) {
-
-    int wilson_loop = 1;
-
-    for (auto i = 0; i < l; ++i) {
-        wilson_loop *= lattice[i][0][0][0][0];
-    }
-    for (auto i = 0; i < l; ++i) {
-        wilson_loop *= lattice[l][i][0][0][1];
-    }
-    for (int i = l-1; i >= 0; --i) {
-        wilson_loop *= lattice[i][l][0][0][0];
-    }
-    for (int i = l-1; i >= 0; --i) {
-        wilson_loop *= lattice[0][i][0][0][1];
-    }
-
-    return wilson_loop;
 }
 
 
